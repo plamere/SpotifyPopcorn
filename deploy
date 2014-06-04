@@ -1,0 +1,1 @@
+s3cmd sync --exclude '.git/*' --acl-public *.html *.js *.css  *.png *.jpg  s3://static.echonest.com/SpotifyPopcorn/

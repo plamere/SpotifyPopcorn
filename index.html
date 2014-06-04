@@ -1,0 +1,366 @@
+<DOCTYPE html>
+<meta charset="utf-8">
+<head>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <script src="spotify.js"></script>
+    <link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.4.2/pure-min.css">
+    <link href="styles.css" rel="stylesheet">
+</head>
+<body>
+
+<div id="header" class="pure-g">
+    <div class="pure-u-3-24" id="album-art">
+      <img width=100 height=100 id='rp-album-art'>
+    </div>
+    <div id="head2" class="pure-u-14-24" id="cur-track">
+      <span id='rp-song-title'> </span>
+      <div id='rp-genre'> </div>
+    </div>
+
+    <div id="head1" class="pure-u-6-24">
+        <div id='title'> Music Popcorn </div>
+        <div id='big-genre'> </div>
+    </div>
+</div>
+
+<div id="graph"> <div>
+<div id="footer">
+    <div id="footer-body">
+        Build by <a href="http://twitter.com/plamere">Paul Lamere</a> 
+        at <a href="http://chicago.musichackday.org">Music Hack Day Chicago</a>. 
+        Powered by <a href="http://Spotify.com">Spotify</a> and <a href="http://the.echonest.com">The Echo Nest</a>. 
+        Read more at <a href="http://musicmachinery.com">Music Machinery</a>
+    </div>
+</div>
+
+<script src="d3.v3.min.js"></script>
+<script src="underscore-min.js"></script>
+<script>
+
+var width = window.innerWidth,
+    height = window.innerHeight; 
+
+var player = getSpotifyPlayer();
+
+var padding = 6,
+    m = 16,
+    radius = d3.scale.sqrt().range([0, 20]),
+    color = d3.scale.category20().domain(d3.range(m));
+
+d3.json("all_genres2.js?v3", 
+    function(error, allGenres) {
+        nodes = allGenres;
+
+      var genreMap = {};
+      var familyMap = {};
+      var famCount = 0;
+
+      _.each(allGenres, function(g, i) {
+           g.index = i;
+           g.displayName = g.name.replace('&', '&amp;');
+           genreMap[g.name] = g;
+           
+           if (g.family.length == 0) {
+                g.family.push('other');
+           }
+
+           var fam = g.family[0];
+           if (! (fam in familyMap)) {
+                familyMap[fam] = famCount++;
+           }
+           g.group = familyMap[fam] % 20;
+           g.color = color(g.group);
+           g.radius = Math.sqrt(g.pop + .5) * 5.5;
+        });
+
+        _.each(allGenres, 
+            function(genre, i) {
+                if (genre.name in familyMap) {
+                    genre.parent = null;
+                } else {
+                   var fam = genre.family[0];
+                   genre.parent = genreMap[fam];
+                }
+            }
+        );
+
+        var force = d3.layout.force()
+            .nodes(nodes)
+            .size([width, height])
+            .gravity(0)
+            .friction(.94)
+            .charge(.1)
+            .on("tick", tick)
+            .start();
+
+        var svg = d3.select("#graph").append("svg")
+            .attr("width", "100%")
+            .attr("height", "100%")
+            .call(d3.behavior.zoom().scaleExtent([.5,10]).on("zoom", zoom))
+          .append("g");
+
+        var circle = svg.selectAll(".node")
+              .data(nodes)
+            .enter().append("g")
+              .attr("class", "node")
+              .attr("id", function(d) { return d.name; } );
+
+          circle.append("circle")
+              .attr("r", function(d) { return d.radius; } )
+              .attr("class", "node-circle")
+              .style("stroke", "#000")
+              .style("fill", function(d) { return color(d.group); });
+
+          circle.append("text")
+               .attr("dy", ".35em")
+               .style("text-anchor", "middle")
+               .text(function(d) { return d.name})
+               .style("font-size", function(d) { return ( d.radius) / this.getComputedTextLength() * 12 + "px";});
+
+          circle.on("click", function(genre) {
+               playNextSong(genre);
+          });
+
+          circle.on("mouseover", function(d, i) {
+                $("#big-genre").html( "  " + d.displayName);
+                d3.select(this).style("fill", "gold"); 
+          });
+
+          circle.on("mouseout", function(d, i) {
+                $("#big-genre").text("  ");
+                d.fixed = false;
+                d3.select(this).style("fill", function(d) { return "#000"});
+          });
+
+          circle.on("mousedown", function(d, i) {
+            playNextSong(d);
+               if (!d.connected) {
+                   d.fixed = true;
+                   collectNeighbors(d);
+                } else {
+                    disconnect(d);
+                }
+          });
+
+          circle.on("mouseup", function(d, i) {
+          });
+
+
+       var curDelay = 0;
+
+       // make it pop
+       svg.selectAll(".node")
+           .attr('visibility', 'hidden');
+       svg.selectAll(".node")
+           .transition()
+           .delay(function(d, i) { curDelay += _.random(20);  return curDelay; } )
+           .attr('visibility', 'visible');
+
+        var drag = d3.behavior.drag()
+            .on("drag", function(d,i) {
+                d.x += d3.event.dx
+                d.y += d3.event.dy
+
+                d3.select(this).attr("transform", function(d,i){
+                   return "translate(" + d.x + "," + d.y + ")";
+                });
+        });
+
+        var link = svg.selectAll(".link");
+
+        function tick(e) {
+
+          link.attr("x1", function(d) { return d.source.px; })
+                .attr("y1", function(d) { return d.source.py; })
+                .attr("x2", function(d) { return d.target.x; })
+                .attr("y2", function(d) { return d.target.y; });
+
+          circle
+              .each(cluster(10 * e.alpha * e.alpha))
+              .each(collide(.5))
+              .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+        }
+
+        // Move d to be adjacent to the cluster node.
+        function cluster(alpha) {
+
+          return function(d) {
+            var node = d.parent, l, r, x, y, k = 1, i = -1;
+
+            // For cluster nodes, apply custom gravity.
+            if (node == null) {
+              node = {x: width / 2, y: height / 2, radius: -d.radius};
+              k = .1 * Math.sqrt(d.radius);
+            }
+
+            x = d.x - node.x;
+            y = d.y - node.y;
+            l = Math.sqrt(x * x + y * y);
+            r = d.radius + node.radius;
+            if (l != r) {
+              l = (l - r) / l * alpha * k;
+              d.x -= x *= l;
+              d.y -= y *= l;
+              node.x += x;
+              node.y += y;
+            }
+          };
+        }
+
+        function restart(links) {       
+            link.remove();
+            link = svg.selectAll(".link")
+              .data(links)
+              .enter()
+              .insert("line", ".link")
+                  .style("stroke-opacity", 0.4)
+                  .style("stroke", function(d) { 
+                        if (d.forward) {
+                            return d.source.color;
+                        } else {
+                            return d.target.color;
+                        }
+                   })
+                  .attr("class", "link");
+        }
+
+        function collectNeighbors(node) {
+            var links = [];
+
+            node.connected = true;
+            //node.fixed = true;
+            force.start();
+            if (node.parent) {
+                links.push({source:node, target:node.parent, forward:true});
+            }
+
+            _.each(node.sims, function(sim, i) {
+                var nsim = genreMap[sim.name];
+                if (nsim.parent) {
+                    nsim.oldParent = parent
+                    nsim.parent = node;
+                    links.push({source:node, target:nsim, forward:true});
+                }
+            });
+
+
+            _.each(allGenres, function(genre, i) {
+                _.each(genre.sims, function(sim, i) {
+                    if (sim.name === node.name) {
+                        if (genre.parent) {
+                            genre.oldParent = parent
+                            genre.parent = node;
+                            links.push({source:node, target:genre, forward:false});
+                        }
+                    }
+                });
+            });
+            restart(links);
+        }
+
+        function disconnect(node) {
+            node.connected = false;
+            restart([]);
+        }
+
+        function restoreNeighbors(node) {
+            _.each(node.sims, function(sim, i) {
+                var nsim = genreMap[sim.name];
+                if (nsim.parent == node) {
+                    nsim.parent = nsim.oldParent;
+                }
+            });
+        }
+
+
+
+        // Resolves collisions between d and all other circles.
+        function collide(alpha) {
+          var quadtree = d3.geom.quadtree(nodes);
+          return function(d) {
+            var r = d.radius + radius.domain()[1] + padding,
+                nx1 = d.x - r,
+                nx2 = d.x + r,
+                ny1 = d.y - r,
+                ny2 = d.y + r;
+            quadtree.visit(function(quad, x1, y1, x2, y2) {
+              if (quad.point && (quad.point !== d)) {
+                var x = d.x - quad.point.x,
+                    y = d.y - quad.point.y,
+                    l = Math.sqrt(x * x + y * y),
+                    r = d.radius + quad.point.radius + (d.color !== quad.point.color) * padding;
+                if (l < r) {
+                  l = (l - r) / l * alpha;
+                  d.x -= x *= l;
+                  d.y -= y *= l;
+                  quad.point.x += x;
+                  quad.point.y += y;
+                }
+              }
+              return x1 > nx2
+                  || x2 < nx1
+                  || y1 > ny2
+                  || y2 < ny1;
+            });
+          };
+        }
+
+       function zoom() {
+            svg.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+        }
+
+    });
+
+jQuery.ajaxSettings.traditional = true; 
+var curGenre = null;
+var enc = '20JFNN9VWJMRA1L8T';
+var host = 'http://developer.echonest.com/'
+
+function fetchGenrePlaylist(genre) {
+    var url = host + 'api/v4/playlist/static?api_key='  + enc;
+    $.getJSON(url, { 'genre': genre.name, 'format':'json', 
+            'bucket': [ 'id:spotify-WW', 'tracks'], 'limit' : true,
+            'results': 20, 
+            'type':'genre-radio'
+            }, 
+
+            function(data) {
+                $("#results").empty();
+                if (! ('songs' in data.response)) {
+                    info("Can't find that genre");
+                } else {
+                    if (data.response.songs.length > 0) {
+                        genre.songs = data.response.songs;
+                        playNextSong(genre);
+                    }
+                }
+            }).error( 
+                function() { 
+                    info("Sorry, trouble making a playlist for the genre " + genre);
+            } );
+}
+
+function info(s) {
+    console.log('info', s);
+}
+
+
+function playNextSong(genre) {
+    $("#rp-genre").text(genre.name);
+    if (!genre.songs) {
+        fetchGenrePlaylist(genre);
+    } else {
+        if (curGenre == genre) {
+            player.next();
+        } else {
+            player.addSongs(genre.songs, true);
+            curGenre = genre;
+        }
+    }
+}
+
+
+
+</script>
+</body>
+</html>

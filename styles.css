@@ -1,0 +1,100 @@
+body {
+    background-color:black;
+}
+
+#header {
+    color:#bbb;
+    width:100%;
+    position:absolute;
+    top:0px;
+    opacity:.8;
+    background-color:black;
+}
+
+#head1 {
+}
+
+#head2 {
+    padding-top:8px;
+}
+
+.circle {
+  stroke: #fff;
+}
+
+#graph {
+    top:0px;
+}
+
+#title {
+    font-size:32px;
+}
+
+.selcircle {
+    fill:#000;
+}
+
+
+.link {
+  stroke: #111;
+  stroke-opacity:.2;
+}
+
+
+#cur-track {
+}
+
+
+
+text {
+  font: 8px sans-serif;
+}
+
+#album-art {
+    margin-left:6px;
+}
+
+#rp-album-art {
+    width:85px;
+    height:85px;
+    float:left;
+    padding:0;
+}
+
+#rp-genre {
+    width:400px;
+    margin-right:30px;
+}
+
+#rp-song-title {
+    padding-top:44px;
+    margin-right:20px;
+    font-size:16px;
+    overflow:hidden;
+}
+
+#play-buttons {
+    padding-top:16px;
+}
+
+#wrap {
+    max-height:100px;
+    width:100%;
+    opacity:.95;
+}
+
+#footer {
+    padding-top:2px;
+    padding-left:5px;
+    color:white;
+    background-color:black;
+    opacity:.55;
+    font-size:10px;
+    text-align:center;
+    width:100%;
+    position:absolute;
+    bottom:0px;
+}
+
+#footer a:link { color:white; }
+#footer a:visited { color:white; }
